@@ -1,0 +1,9 @@
+{
+  "name": "mephi-server",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/server.test.js"
+  },
+  "devDependencies": {}
+}
