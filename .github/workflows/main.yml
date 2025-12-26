@@ -56,7 +56,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Simulate deployment
+    - name: deployment
       run: |
         echo "Starting deployment simulation..."
         echo "Previous jobs completed successfully"
@@ -67,7 +67,26 @@ jobs:
         echo "  - Status: Ready"
         echo "  - Next steps: Configure real deployment"
         echo ""
-        echo "CI/CD pipeline practice completed!"
+        echo "deployment simulationcompleted!"
+    # ====================================================
+    # РЕАЛЬНЫЙ ДЕПЛОЙ НА VPS ЧЕРЕЗ SSH
+    # ====================================================
+    # Для использования:
+    # 1. Раскомментируйте секцию ниже
+    # 2. Добавьте секреты в GitHub:
+    #    Settings → Secrets and variables → Actions
+    #    • SSH_HOST - IP адрес сервера
+    #    • SSH_USER - имя пользователя (обычно root или ubuntu)
+    #    • SSH_KEY - приватный SSH ключ
+    # ====================================================
+    
+    # - name: Deploy to VPS via SSH
+    #   uses: appleboy/ssh-action@v0.1.7
+    #   with:
+    #     host: ${{ secrets.SSH_HOST }}
+    #     username: ${{ secrets.SSH_USER }}
+    #     key: ${{ secrets.SSH_KEY }}
+    #     port: 22
     
     - name: Create deployment artifact
       run: |
