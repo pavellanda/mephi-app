@@ -23,6 +23,7 @@ jobs:
         node-version: '20.x'
     
     - name: Run application test
+      shell: bash
       run: |
         echo "Starting server..."
         node src/server.js &
@@ -34,12 +35,7 @@ jobs:
         TEST_EXIT_CODE=$?
         
         echo "Stopping server..."
-        # Обработка остановки процесса с учетом сборки на windows
-        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          taskkill /PID $SERVER_PID /F
-        else
-          kill $SERVER_PID 2>/dev/null || true
-        fi
+        pkill -f "node src/server.js" 2>/dev/null || true
         
         exit $TEST_EXIT_CODE
     
