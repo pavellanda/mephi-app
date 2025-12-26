@@ -1,4 +1,4 @@
-name: CI/CD Practice Pipeline
+name: Github Actions Practice Pipeline
 
 on:
   push:
