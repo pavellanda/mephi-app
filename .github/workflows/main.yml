@@ -1,139 +1,17 @@
-name: Security Pipeline with SBOM and Dependency Scanning
+name: Github Actions Practice Pipeline
 
 on:
-  pull_request:
-    branches: [main]
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
 
 jobs:
-  build:
-    name: Generate SBOM
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: |
-        npm ci
-        npm install @cyclonedx/cyclonedx-npm@^2.0.0
-    
-    - name: Generate SBOM (CycloneDX format)
-      run: npx @cyclonedx/cyclonedx-npm --output-file sbom.json
-    
-    - name: View SBOM contents
-      run: |
-        echo "=== SBOM Summary ==="
-        echo "Total components: $(jq '.components | length' sbom.json 2>/dev/null || echo 'Install jq for better output')"
-        cat sbom.json | head -100
-        echo "..."
-    
-    - name: Upload SBOM as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: sbom-artifact
-        path: sbom.json
-        retention-days: 7
-
-  security:
-    name: Security Analysis
-    runs-on: ubuntu-latest
-    needs: build
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Download SBOM artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: sbom-artifact
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Install OWASP Dependency Check
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget unzip
-        wget https://github.com/jeremylong/DependencyCheck/releases/download/v9.0.9/dependency-check-9.0.9-release.zip
-        unzip dependency-check-9.0.9-release.zip
-        chmod +x ./dependency-check/bin/dependency-check.sh
-    
-    - name: Run OWASP Dependency Check Scan
-      run: |
-        ./dependency-check/bin/dependency-check.sh \
-          --scan . \
-          --format "HTML" \
-          --format "JSON" \
-          --out "reports" \
-          --project "mephi-server" \
-          --enableExperimental
-    
-    - name: Upload Dependency Check Reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: dependency-check-reports
-        path: reports/
-        retention-days: 7
-    
-    - name: Display vulnerability summary
-      run: |
-        if [ -f "reports/dependency-check-report.json" ]; then
-          echo "=== Dependency Check Summary ==="
-          echo "Report generated: $(ls -la reports/)"
-          echo "JSON report exists"
-          # Для простого проекта уязвимостей может не быть
-          echo "Check the HTML report for details"
-        else
-          echo "No JSON report found"
-        fi
-    
-    - name: Upload SBOM to Dependency Track (пример)
-      if: false  # Отключено, так как нет доступа к Dependency Track
-      run: |
-        echo "This step would upload SBOM to Dependency Track"
-        echo "For real usage, uncomment and configure with your Dependency Track URL and API key"
-        # Пример команды:
-        # curl -X "POST" "http://dependency-track-url/api/v1/bom" \
-        #      -H "Content-Type: multipart/form-data" \
-        #      -H "X-Api-Key: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}" \
-        #      -F "bom=@sbom.json" \
-        #      -F "projectName=mephi-server" \
-        #      -F "projectVersion=1.0.0"
-    
-    - name: Analyze SBOM contents
-      run: |
-        echo "=== SBOM Analysis ==="
-        echo "SBOM file size: $(wc -c < sbom.json) bytes"
-        echo "SBOM contains:"
-        if command -v jq &> /dev/null; then
-          echo "- Format: $(jq -r '.bomFormat' sbom.json)"
-          echo "- Spec version: $(jq -r '.specVersion' sbom.json)"
-          echo "- Total dependencies: $(jq '.components | length' sbom.json)"
-          echo "- Component types:"
-          jq -r '.components[].type' sbom.json | sort | uniq -c
-        else
-          echo "Install jq for detailed analysis"
-          grep -o '"type":"[^"]*"' sbom.json | sort | uniq -c
-        fi
-
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     
     steps:
     - name: Checkout code
@@ -145,6 +23,7 @@ jobs:
         node-version: '20.x'
     
     - name: Run application test
+      shell: bash
       run: |
         echo "Starting server..."
         node src/server.js &
@@ -159,43 +38,69 @@ jobs:
         pkill -f "node src/server.js" 2>/dev/null || true
         
         exit $TEST_EXIT_CODE
+    
+    - name: Success message
+      if: success()
+      run: echo "Build and test completed successfully on ${{ matrix.os }}"
+    
+    - name: Failure message
+      if: failure()
+      run: echo "Build or test failed on ${{ matrix.os }}"
 
   deploy:
-    needs: [build, security, test]
+    needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main'
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Download security reports
-      uses: actions/download-artifact@v4
-      with:
-        name: dependency-check-reports
-        path: security-reports/
-    
-    - name: Display deployment security status
+    - name: deployment
       run: |
-        echo "=== Deployment Security Check ==="
-        echo "All security checks passed"
-        echo "SBOM generated and analyzed"
-        echo "Dependency Check completed"
+        echo "Starting deployment simulation..."
+        echo "Previous jobs completed successfully"
+        echo "Application is ready for deployment"
         echo ""
-        echo "Reports available as artifacts for 7 days"
+        echo "Deployment summary:"
+        echo "  - Platform: Linux (Ubuntu)"
+        echo "  - Status: Ready"
+        echo "  - Next steps: Configure real deployment"
+        echo ""
+        echo "deployment simulation completed!"
+    # ====================================================
+    # РЕАЛЬНЫЙ ДЕПЛОЙ НА VPS ЧЕРЕЗ SSH
+    # ====================================================
+    # Для использования:
+    # 1. Раскомментируйте секцию ниже
+    # 2. Добавьте секреты в GitHub:
+    #    Settings → Secrets and variables → Actions
+    #    • SSH_HOST - IP адрес сервера
+    #    • SSH_USER - имя пользователя (обычно root или ubuntu)
+    #    • SSH_KEY - приватный SSH ключ
+    # ====================================================
     
-    - name: Create deployment package
+    # - name: Deploy to VPS via SSH
+    #   uses: appleboy/ssh-action@v0.1.7
+    #   with:
+    #     host: ${{ secrets.SSH_HOST }}
+    #     username: ${{ secrets.SSH_USER }}
+    #     key: ${{ secrets.SSH_KEY }}
+    #     port: 22
+    
+    - name: Create deployment artifact
       run: |
+        echo "Creating deployment package..."
         mkdir -p deployment
         cp -r src deployment/
         cp package.json deployment/
-        cp sbom.json deployment/ 2>/dev/null || echo "SBOM not found"
         echo "Deployment time: $(date)" > deployment/deploy-info.txt
-        echo "Security scan completed: Yes" >> deployment/deploy-info.txt
+        
+        echo "Artifact contents:"
+        ls -la deployment/
     
-    - name: Upload deployment artifact
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: deployment-package
+        name: deploy-package
         path: deployment/
-        retention-days: 7

@@ -6,9 +6,5 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node test/server.test.js",
-    "sbom": "npx @cyclonedx/cyclonedx-npm --output-file sbom.json"
-  },
-  "devDependencies": {
-    "@cyclonedx/cyclonedx-npm": "^2.0.0"
   }
 }
