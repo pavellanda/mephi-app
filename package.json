@@ -6,11 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node test/server.test.js",
-    "sbom": "cyclonedx-bom -o sbom.json",
-    "scan": "dependency-check --scan . --format HTML --format JSON --out reports/"
+    "sbom": "npx @cyclonedx/cyclonedx-npm --output-file sbom.json"
   },
   "devDependencies": {
-    "@cyclonedx/cyclonedx-npm": "^2.0.0",
-    "dependency-check": "^5.0.0"
+    "@cyclonedx/cyclonedx-npm": "^2.0.0"
   }
 }
