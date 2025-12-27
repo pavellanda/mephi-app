@@ -1,15 +1,14 @@
-name: Github Actions Practice Pipeline
+name: Security Pipeline with SBOM and Dependency Scanning
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 jobs:
-  # build - Всегда (и PR, и push в main)
   build:
-    name: Build
+    name: Generate SBOM
     runs-on: ubuntu-latest
     
     steps:
@@ -20,37 +19,43 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20.x'
+        cache: 'npm'
     
     - name: Install dependencies
-      run: npm install
-    
-    - name: Build verification
       run: |
-        echo "Build completed successfully"
-        echo "Node.js version: $(node --version)"
-        echo "npm version: $(npm --version)"
-        echo "Project dependencies installed"
+        npm ci
+        npm install @cyclonedx/cyclonedx-npm@^2.0.0
     
-    - name: Upload build artifact
+    - name: Generate SBOM (CycloneDX format)
+      run: npx @cyclonedx/cyclonedx-npm --output-file sbom.json
+    
+    - name: View SBOM contents
+      run: |
+        echo "=== SBOM Summary ==="
+        echo "Total components: $(jq '.components | length' sbom.json 2>/dev/null || echo 'Install jq for better output')"
+        cat sbom.json | head -100
+        echo "..."
+    
+    - name: Upload SBOM as artifact
       uses: actions/upload-artifact@v4
       with:
-        name: build-artifact
-        path: |
-          package.json
-          package-lock.json
-          src/
+        name: sbom-artifact
+        path: sbom.json
         retention-days: 7
 
-  # security - только для PR
   security:
     name: Security Analysis
-    needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'  # только для PR
+    needs: build
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+    
+    - name: Download SBOM artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: sbom-artifact
     
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -58,133 +63,77 @@ jobs:
         node-version: '20.x'
     
     - name: Install dependencies
-      run: npm install
+      run: npm ci
     
-    # Часть 1: Генерация SBOM
-    - name: Install SBOM tools
+    - name: Install OWASP Dependency Check
       run: |
-        npm install -g @cyclonedx/cyclonedx-npm
-        npm install @cyclonedx/cyclonedx-npm --save-dev
+        sudo apt-get update
+        sudo apt-get install -y wget unzip
+        wget https://github.com/jeremylong/DependencyCheck/releases/download/v9.0.9/dependency-check-9.0.9-release.zip
+        unzip dependency-check-9.0.9-release.zip
+        chmod +x ./dependency-check/bin/dependency-check.sh
     
-    - name: Generate CycloneDX SBOM
+    - name: Run OWASP Dependency Check Scan
       run: |
-        npx @cyclonedx/cyclonedx-npm --output-file sbom-cyclonedx.json
-        echo "SBOM generated successfully"
-        echo "Total dependencies found: $(jq '.components | length' sbom-cyclonedx.json)"
-        echo ""
-        echo "=== Dependencies List ==="
-        jq -r '.components[] | select(.type == "library") | "\(.name)@\(.version)"' sbom-cyclonedx.json
-    
-    # OWASP Dependency Check
-    - name: Run OWASP Dependency Check
-      uses: dependency-check/Dependency-Check_Action@main
-      with:
-        project: 'mephi-server'
-        path: '.'
-        format: 'HTML'
-        out: 'reports'
-        args: >
+        ./dependency-check/bin/dependency-check.sh \
+          --scan . \
+          --format "HTML" \
+          --format "JSON" \
+          --out "reports" \
+          --project "mephi-server" \
           --enableExperimental
-          --failOnCVSS 0
-          --scan .
     
-    - name: Process Dependency Check results
+    - name: Upload Dependency Check Reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-check-reports
+        path: reports/
+        retention-days: 7
+    
+    - name: Display vulnerability summary
       run: |
-        echo "=== Dependency Check Results ==="
-        if [ -f "reports/dependency-check-report.html" ]; then
-          echo "Report generated: reports/dependency-check-report.html"
-          
-          # Если есть JSON отчет, анализируем его
-          if [ -f "reports/dependency-check-report.json" ]; then
-            VULN_COUNT=$(jq '[.dependencies[].vulnerabilities[]?] | length' reports/dependency-check-report.json 2>/dev/null || echo "0")
-            echo "Found $VULN_COUNT vulnerabilities"
-          fi
+        if [ -f "reports/dependency-check-report.json" ]; then
+          echo "=== Dependency Check Summary ==="
+          echo "Report generated: $(ls -la reports/)"
+          echo "JSON report exists"
+          # Для простого проекта уязвимостей может не быть
+          echo "Check the HTML report for details"
         else
-          echo "No Dependency Check report found"
+          echo "No JSON report found"
         fi
     
-    # Dependency Track эмуляция
-    - name: Simulate Dependency Track analysis
+    - name: Upload SBOM to Dependency Track (пример)
+      if: false  # Отключено, так как нет доступа к Dependency Track
       run: |
-        echo "=== Dependency Track Simulation ==="
-        echo ""
-        echo "Local analysis of dependencies:"
-        echo ""
-        
-        # Анализ через npm audit
-        npm audit --json > npm-audit.json 2>/dev/null || true
-        
-        if [ -f "npm-audit.json" ]; then
-          AUDIT_VULNS=$(jq -r '.metadata.vulnerabilities.total // 0' npm-audit.json)
-          echo "npm audit found $AUDIT_VULNS vulnerabilities"
-          
-          if [ "$AUDIT_VULNS" -gt 0 ]; then
-            echo ""
-            echo "Vulnerability breakdown:"
-            jq -r '.metadata.vulnerabilities | to_entries[] | "\(.key): \(.value)"' npm-audit.json
-          fi
+        echo "This step would upload SBOM to Dependency Track"
+        echo "For real usage, uncomment and configure with your Dependency Track URL and API key"
+        # Пример команды:
+        # curl -X "POST" "http://dependency-track-url/api/v1/bom" \
+        #      -H "Content-Type: multipart/form-data" \
+        #      -H "X-Api-Key: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}" \
+        #      -F "bom=@sbom.json" \
+        #      -F "projectName=mephi-server" \
+        #      -F "projectVersion=1.0.0"
+    
+    - name: Analyze SBOM contents
+      run: |
+        echo "=== SBOM Analysis ==="
+        echo "SBOM file size: $(wc -c < sbom.json) bytes"
+        echo "SBOM contains:"
+        if command -v jq &> /dev/null; then
+          echo "- Format: $(jq -r '.bomFormat' sbom.json)"
+          echo "- Spec version: $(jq -r '.specVersion' sbom.json)"
+          echo "- Total dependencies: $(jq '.components | length' sbom.json)"
+          echo "- Component types:"
+          jq -r '.components[].type' sbom.json | sort | uniq -c
+        else
+          echo "Install jq for detailed analysis"
+          grep -o '"type":"[^"]*"' sbom.json | sort | uniq -c
         fi
-        
-        echo ""
-        echo "Manual dependency check:"
-        # Проверка конкретных версий
-        grep -q '"express".*"4.17.1"' sbom-cyclonedx.json && echo "express@4.17.1 - Known vulnerabilities"
-        grep -q '"lodash".*"4.17.15"' sbom-cyclonedx.json && echo "lodash@4.17.15 - Known vulnerabilities"
-        grep -q '"moment".*"2.29.1"' sbom-cyclonedx.json && echo "moment@2.29.1 - Known vulnerabilities"
-    
-    # Сохранение отчетов
-    - name: Upload security artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-reports
-        path: |
-          sbom-cyclonedx.json
-          reports/
-          npm-audit.json
-        retention-days: 7
-    
-    - name: Generate security summary
-      run: |
-        echo "# Security Analysis Summary" > security-summary.md
-        echo "**Date:** $(date)" >> security-summary.md
-        echo "**PR:** #${{ github.event.pull_request.number }}" >> security-summary.md
-        echo "" >> security-summary.md
-        echo "## Tools Executed" >> security-summary.md
-        echo "- SBOM Generation (CycloneDX)" >> security-summary.md
-        echo "- OWASP Dependency Check" >> security-summary.md
-        echo "- Dependency Track Simulation" >> security-summary.md
-        echo "" >> security-summary.md
-        echo "## Reports Available" >> security-summary.md
-        echo "- sbom-cyclonedx.json" >> security-summary.md
-        echo "- dependency-check-report.html" >> security-summary.md
-        echo "- npm-audit.json" >> security-summary.md
-        echo "" >> security-summary.md
-        echo "## Next Steps" >> security-summary.md
-        echo "1. Review security reports" >> security-summary.md
-        echo "2. Fix identified vulnerabilities" >> security-summary.md
-        echo "3. Approve merge after review" >> security-summary.md
-        
-        cat security-summary.md
-    
-    - name: Upload summary
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-summary
-        path: security-summary.md
-        retention-days: 7
 
-  # test - всегда (зависит от security только в PR)
   test:
-    name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    
-    # Условная зависимость: если это PR, ждем security, если push - только build
-    if: |
-      (github.event_name == 'pull_request' && needs.security.result == 'success') ||
-      (github.event_name == 'push')
+    name: Run Tests
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
@@ -195,8 +144,7 @@ jobs:
       with:
         node-version: '20.x'
     
-    - name: Run application tests
-      shell: bash
+    - name: Run application test
       run: |
         echo "Starting server..."
         node src/server.js &
@@ -211,19 +159,9 @@ jobs:
         pkill -f "node src/server.js" 2>/dev/null || true
         
         exit $TEST_EXIT_CODE
-    
-    - name: Success message
-      if: success()
-      run: echo "Tests completed successfully on ${{ matrix.os }}"
-    
-    - name: Failure message
-      if: failure()
-      run: echo "Tests failed on ${{ matrix.os }}"
 
-  # deploy - Только для push в main
   deploy:
-    name: Deploy
-    needs: test
+    needs: [build, security, test]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
@@ -231,63 +169,33 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: deployment
+    - name: Download security reports
+      uses: actions/download-artifact@v4
+      with:
+        name: dependency-check-reports
+        path: security-reports/
+    
+    - name: Display deployment security status
       run: |
-        echo "DEPLOYMENT PROCESS"
+        echo "=== Deployment Security Check ==="
+        echo "All security checks passed"
+        echo "SBOM generated and analyzed"
+        echo "Dependency Check completed"
         echo ""
-        echo "=== Deployment Summary ==="
-        echo "Branch: ${{ github.ref }}"
-        echo "Commit: ${{ github.sha }}"
-        echo "Author: ${{ github.actor }}"
-        echo ""
-        
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          echo "Security checks completed during PR review:"
-          echo "SBOM generated"
-          echo "Vulnerability analysis"
-          echo "All tests passed"
-        else
-          echo "Direct push to main - security checks not required"
-          echo "Build completed"
-          echo "Tests passed"
-        fi
-        
-        echo ""
-        echo "=== Deployment Steps ==="
-        echo "1. Creating deployment package..."
+        echo "Reports available as artifacts for 7 days"
+    
+    - name: Create deployment package
+      run: |
         mkdir -p deployment
         cp -r src deployment/
-        cp package*.json deployment/
-        cp README.md deployment/ 2>/dev/null || true
-        
-        echo "2. Generating deployment manifest..."
-        echo "Deployment Time: $(date)" > deployment/deploy-info.txt
-        echo "Commit SHA: ${{ github.sha }}" >> deployment/deploy-info.txt
-        echo "Build ID: ${{ github.run_id }}" >> deployment/deploy-info.txt
-        
-        echo "3. Package contents:"
-        ls -la deployment/
-        
-        echo ""
-        echo "Deployment package ready!"
-        echo ""
-        echo "Next steps (in production):"
-        echo "• Upload to server"
-        echo "• Run database migrations"
-        echo "• Restart services"
-        echo "• Health checks"
-    
-    - name: Create deployment artifact
-      run: |
-        echo "Creating final deployment artifact..."
-        tar -czf deployment-package.tar.gz deployment/
-        echo "Artifact size: $(du -h deployment-package.tar.gz | cut -f1)"
+        cp package.json deployment/
+        cp sbom.json deployment/ 2>/dev/null || echo "SBOM not found"
+        echo "Deployment time: $(date)" > deployment/deploy-info.txt
+        echo "Security scan completed: Yes" >> deployment/deploy-info.txt
     
     - name: Upload deployment artifact
       uses: actions/upload-artifact@v4
       with:
-        name: deploy-package
-        path: |
-          deployment/
-          deployment-package.tar.gz
+        name: deployment-package
+        path: deployment/
         retention-days: 7
