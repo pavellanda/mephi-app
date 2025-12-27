@@ -1,9 +1,22 @@
 {
   "name": "mephi-server",
   "version": "1.0.0",
+  "description": "Simple HTTP server",
+  "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node test/server.test.js"
+    "test": "node test/server.test.js",
+    "sbom:cyclonedx": "cyclonedx-node -o sbom.json",
+    "sbom:spdx": "npm list --json | convert-npm-to-spdx > spdx.json"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "express": "4.17.1",
+    "lodash": "4.17.15",
+    "moment": "2.29.1"
+  },
+  "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "^1.12.0",
+    "@spdx/spdx-to-npm-list": "^0.1.0",
+    "convert-npm-to-spdx": "^1.0.0"
+  }
 }

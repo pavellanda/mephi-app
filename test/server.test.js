@@ -1,3 +1,4 @@
+
 const http = require('http');
 
 describe('Server Test', () => {
@@ -47,7 +48,7 @@ function test(name, fn) {
       }
     });
   } catch (err) {
-    console.log(`❌ ${name}: FAILED - ${err.message}`);
+    console.log(`${name}: FAILED - ${err.message}`);
   }
 }
 
