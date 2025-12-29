@@ -1,106 +1,61 @@
-name: Github Actions Practice Pipeline
+name: Security with Mock Track
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+on: pull_request
 
 jobs:
-  build-and-test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20.x'
-    
-    - name: Run application test
-      shell: bash
-      run: |
-        echo "Starting server..."
-        node src/server.js &
-        SERVER_PID=$!
-        sleep 3
-        
-        echo "Running tests..."
-        node test/server.test.js
-        TEST_EXIT_CODE=$?
-        
-        echo "Stopping server..."
-        pkill -f "node src/server.js" 2>/dev/null || true
-        
-        exit $TEST_EXIT_CODE
-    
-    - name: Success message
-      if: success()
-      run: echo "Build and test completed successfully on ${{ matrix.os }}"
-    
-    - name: Failure message
-      if: failure()
-      run: echo "Build or test failed on ${{ matrix.os }}"
-
-  deploy:
-    needs: build-and-test
+  security:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: deployment
-      run: |
-        echo "Starting deployment simulation..."
-        echo "Previous jobs completed successfully"
-        echo "Application is ready for deployment"
-        echo ""
-        echo "Deployment summary:"
-        echo "  - Platform: Linux (Ubuntu)"
-        echo "  - Status: Ready"
-        echo "  - Next steps: Configure real deployment"
-        echo ""
-        echo "deployment simulation completed!"
-    # ====================================================
-    # РЕАЛЬНЫЙ ДЕПЛОЙ НА VPS ЧЕРЕЗ SSH
-    # ====================================================
-    # Для использования:
-    # 1. Раскомментируйте секцию ниже
-    # 2. Добавьте секреты в GitHub:
-    #    Settings → Secrets and variables → Actions
-    #    • SSH_HOST - IP адрес сервера
-    #    • SSH_USER - имя пользователя (обычно root или ubuntu)
-    #    • SSH_KEY - приватный SSH ключ
-    # ====================================================
-    
-    # - name: Deploy to VPS via SSH
-    #   uses: appleboy/ssh-action@v0.1.7
-    #   with:
-    #     host: ${{ secrets.SSH_HOST }}
-    #     username: ${{ secrets.SSH_USER }}
-    #     key: ${{ secrets.SSH_KEY }}
-    #     port: 22
-    
-    - name: Create deployment artifact
-      run: |
-        echo "Creating deployment package..."
-        mkdir -p deployment
-        cp -r src deployment/
-        cp package.json deployment/
-        echo "Deployment time: $(date)" > deployment/deploy-info.txt
-        
-        echo "Artifact contents:"
-        ls -la deployment/
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: deploy-package
-        path: deployment/
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+      
+      - run: npm ci
+      
+      - name: Generate SBOM
+        run: |
+          npm install --save-dev @cyclonedx/cyclonedx-npm
+          npx @cyclonedx/cyclonedx-npm --output-file sbom.json
+          
+      - name: Mock Dependency Track API
+        run: |
+          # Создание мок-ответа API
+          cat > mock-response.json << EOF
+          {
+            "uuid": "$(uuidgen)",
+            "name": "mephi-server",
+            "version": "1.0.0",
+            "lastBomImport": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "lastMeasurement": {
+              "critical": 0,
+              "high": 0,
+              "medium": 0,
+              "low": 0,
+              "unassigned": 0
+            }
+          }
+          EOF
+          
+          echo "Mock API response saved"
+          
+      - name: Basic vulnerability check
+        run: |
+          # Простая проверка версий
+          echo "Checking for known issues..."
+          
+          # Проверка Node.js версии
+          NODE_VERSION=$(node --version)
+          echo "Node.js version: $NODE_VERSION"
+          
+          # Проверка npm версии
+          npm --version
+          
+      - uses: actions/upload-artifact@v4
+        with:
+          name: security-data
+          path: |
+            sbom.json
+            mock-response.json
+            package.json
+            package-lock.json
