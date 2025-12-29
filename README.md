@@ -3,7 +3,7 @@
 ## Структура
 - `src/server.js` - HTTP сервер
 - `test/server.test.js` - простые тесты
-- `.github/workflows/ci-cd.yml` - конфигурация GitHub Actions
+- `.github/workflows/main.yml` - конфигурация GitHub Actions
 
 ## Как работает
 1. При push в main или PR запускается workflow

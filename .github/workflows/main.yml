@@ -1,4 +1,4 @@
-name: Security with Mock Track
+name: Security
 
 on: pull_request
 
@@ -11,7 +11,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
       
-      - run: npm ci
+      - run: npm install
       
       - name: Generate SBOM
         run: |
